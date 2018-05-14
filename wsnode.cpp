@@ -73,6 +73,8 @@ void WSNode::set_neighbors(int* neighbors, int neighbors_size)
     _neighbors_size = neighbors_size;
     if(neighbors_size > 0)
 	_neighbors.reset(new int[neighbors_size]);
+    else
+	_neighbors.reset(0);
      while(neighbors_size-- > 0)
          _neighbors[neighbors_size] = neighbors[neighbors_size];
 }

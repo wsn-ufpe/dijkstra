@@ -41,7 +41,7 @@ public:
 
 protected:
 	std::unique_ptr<int[]> _neighbors;
-        int _neighbors_size;
+        unsigned int _neighbors_size;
 
         double _x, _y;
 	double _consumption;
