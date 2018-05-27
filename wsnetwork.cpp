@@ -14,12 +14,13 @@ WSNetwork::WSNetwork(int network_size, WSChannel* channel, int nbr_iter, int see
       _tmp_nodes(new WSNode[network_size]),
       _sink_idx(network_size-1),
       _network_size(network_size),
+      _nbr_iter(nbr_iter),
+      _x_min(0), _x_max(0), _y_min(0), _y_max(0),
       _routing_table(new int[network_size*network_size]),
       _routes_len(new int[network_size]),
       _best_routing_table(new int[network_size*network_size]),
       _best_routes_len(new int[network_size]),
       _channel(channel),
-      _nbr_iter(nbr_iter),
       _best_min_lifetime(-1),
       _nodes_costs(new double[network_size]),
       _predecessors(new int[network_size])
@@ -34,6 +35,10 @@ const int MAX_ATTEMPTS_GEN_NETWORK = 1000;
 bool WSNetwork::generate_random_network(double x_size, double y_size, double battery,
 					double msg_rate, double penalty)
 {
+    _x_min = -x_size/2;
+    _x_max = x_size/2;
+    _y_min = -y_size/2;
+    _y_max = y_size/2;
     for(int node_idx=0; node_idx<_network_size; node_idx++) {
 	int attempts = 0;
 	do {
@@ -44,13 +49,6 @@ bool WSNetwork::generate_random_network(double x_size, double y_size, double bat
 	} while(!this->is_good_node(node_idx));
         _tmp_nodes[node_idx] = _nodes[node_idx];
     }
-
-#if 0
-    /* Forcing sink node to be at least 100 m from any node*/
-    _tmp_nodes[_network_size - 1].set_x(0);
-    _tmp_nodes[_network_size - 1].set_y(-y_size/2 - 100);
-    _nodes[_network_size - 1] = _tmp_nodes[_network_size - 1];
-#endif
 
     return true;
 }
@@ -111,8 +109,11 @@ bool WSNetwork::optimize_maximum_lifetime()
     bool first_round = true;
 
     bool has_converged = false;
-    for(int node_idx=0; node_idx<_network_size; node_idx++)
+    for(int node_idx=0; node_idx<_network_size; node_idx++) {
 	_nodes[node_idx].reset_counters();
+	_tmp_nodes[node_idx].reset_counters();
+	_best_min_lifetime = 0;
+    }
     do {
 	this->find_best_route(first_round, node_idx);
 	if(this->check_best()) {

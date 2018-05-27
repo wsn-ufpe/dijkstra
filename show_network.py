@@ -3,28 +3,120 @@ import json
 import numpy as np
 import matplotlib.pyplot as plt
 
-suffix = "n100_x500_y500_b5_m100_p1e-7_000"
+#suffix = "n100_x500_y500_b5_m100_p1e-7_000"
+NBR_NODES, NBR_STEPS = 200, 16
+filename = "n{0}_P1e-7_{1}x{1}_000.dat".format(NBR_NODES, NBR_STEPS - 1)
 
-with open("min_energy_" + suffix + ".dat") as fp:
-    data1 = json.load(fp)
+with open(filename) as fp:
+    data = json.load(fp)
 
-with open("max_lifetime_" + suffix + ".dat") as fp:
-    data2 = json.load(fp)
+iterations = data["iterations"][::-1]
+xs = np.array(data["xs"])
+ys = np.array(data["ys"])
 
-lifetime = data1["lifetime"]
-lifetime2 = data2["lifetime"]
-consumption1 = data1["consumption"]
-consumption2 = data2["consumption"]
-print("Minimum lifetime: ", min(lifetime[:-1]))
+def read_energies_lifetimes(iterations):
+    res = [(min(iteration["energy"]["lifetime"][:-1], default=-1),
+            min(iteration["lifetime"]["lifetime"][:-1], default=-1),
+            1000*sum(iteration["energy"]["consumption"][:-1]),
+            1000*sum(iteration["lifetime"]["consumption"][:-1]))
+           for iteration in iterations]
+    return [np.array(l) for l in list(zip(*res))]
+
+lifetimes_me, lifetimes_ml, consumptions_me, consumptions_ml = read_energies_lifetimes(iterations)
+lifetimes_me[lifetimes_me < 0] = np.min(lifetimes_me[lifetimes_me > 0])
+lifetimes_ml[lifetimes_ml < 0] = np.min(lifetimes_ml[lifetimes_ml > 0])
+consumptions_me[consumptions_me == 0] = np.max(consumptions_me)
+consumptions_ml[consumptions_ml == 0] = np.max(consumptions_ml)
+sink_xy = [(iteration["sink_position"]["x"], iteration["sink_position"]["y"])
+            for iteration in iterations]
+
+consumptions_rel = consumptions_ml/consumptions_me - 1
+lifetimes_rel = lifetimes_ml/lifetimes_me - 1
+corr = lifetimes_rel/max(lifetimes_rel) - consumptions_rel/max(consumptions_rel)
+
+max_energy_value = max(max(consumptions_me), max(consumptions_ml))
+min_energy_value = min(min(consumptions_me), min(consumptions_ml))
+max_lt_value = max(max(lifetimes_me), max(lifetimes_ml))
+min_lt_value = min(min(lifetimes_me), min(lifetimes_ml))
+
+plt.figure(figsize=(16, 12))
+
+plt.subplot(331)
+plt.imshow(consumptions_me.reshape((NBR_STEPS, NBR_STEPS))[:,::-1], interpolation="spline36",
+           vmin=min_energy_value, vmax=max_energy_value, cmap="viridis_r")
+plt.colorbar()
+plt.title("Consumo total - Energia mínima (C-MnE)")
+plt.subplot(334)
+plt.imshow(consumptions_ml.reshape((NBR_STEPS, NBR_STEPS))[:,::-1], interpolation="spline36",
+           vmin=min_energy_value, vmax=max_energy_value, cmap="viridis_r")
+plt.colorbar()
+plt.title("Consumo total - Lifetime máximo (C-MxT)")
+plt.subplot(337)
+plt.imshow(100*consumptions_rel.reshape((NBR_STEPS, NBR_STEPS))[:,::-1], interpolation="spline36",
+           cmap="viridis_r")
+plt.colorbar()
+plt.title("C-MxT/C-MnE - 1")
+plt.subplot(332)
+plt.imshow(lifetimes_me.reshape((NBR_STEPS, NBR_STEPS))[:,::-1], interpolation="spline36",
+           vmin=min_lt_value, vmax=max_lt_value)
+plt.colorbar()
+plt.title("Lifetime - Energia mínima (T-MnE)")
+plt.subplot(335)
+plt.imshow(lifetimes_ml.reshape((NBR_STEPS, NBR_STEPS))[:,::-1], interpolation="spline36",
+           vmin=min_lt_value, vmax=max_lt_value)
+plt.colorbar()
+plt.title("Lifetime - Lifetime máximo (T-MxT)")
+plt.subplot(338)
+plt.imshow(100*lifetimes_rel.reshape((NBR_STEPS, NBR_STEPS))[:,::-1], interpolation="spline36")
+plt.colorbar()
+plt.title("T-MxT/T-MnE - 1")
+plt.subplot(339)
+plt.imshow(corr.reshape((NBR_STEPS, NBR_STEPS))[:,::-1], interpolation="spline36")
+plt.colorbar()
+plt.title("Correlação")
+
+plt.savefig('sink_position.png', bbox_inches="tight", dpi=200)
+plt.clf()
+
+#plt.show()
+
+plt.figure(figsize=(16, 12))
+
+plt.subplot(121)
+plt.imshow(corr.reshape((NBR_STEPS, NBR_STEPS))[:,::-1], interpolation="spline36")
+plt.colorbar()
+plt.title("Correlação")
+plt.subplot(122)
+plt.gca().set_aspect("equal")
+plt.title("Rede N=200 16x16")
+plt.scatter(xs[:-1], ys[:-1], s=20)
+
+plt.savefig('network_n200_16x16.png', bbox_inches="tight", dpi=200)
+plt.clf()
+
+#plt.show()
+
+print(min(consumptions_me), max(consumptions_me))
+print(min(consumptions_ml), max(consumptions_ml))
+print(min(lifetimes_me), max(lifetimes_me))
+print(min(lifetimes_ml), max(lifetimes_ml))
+
+data_me = iterations[len(iterations)//2]["energy"]
+data_ml = iterations[len(iterations)//2]["lifetime"]
+
+lifetime1 = data_me["lifetime"]
+lifetime2 = data_ml["lifetime"]
+consumption1 = data_me["consumption"]
+consumption2 = data_ml["consumption"]
+print("Minimum lifetime: ", min(lifetime1[:-1]))
 print("Minimum lifetime: ", min(lifetime2[:-1]))
 print("Global consumption: ", 1000*sum(consumption1))
 print("Global consumption: ", 1000*sum(consumption2))
 
-plt.violinplot([lifetime[:-1], lifetime2[:-1]], [1, 3], widths=0.7, showmeans=True,
+plt.violinplot([lifetime1[:-1], lifetime2[:-1]], [1, 3], widths=0.7, showmeans=True,
                showextrema=True, showmedians=True)
 plt.show()
 
-xs, ys = data1["xs"], data1["ys"]
 plt.scatter(xs[:-1], ys[:-1], s=20)
 plt.scatter(xs[-1], ys[-1], s=50, marker="s")
 
@@ -40,9 +132,9 @@ plt.show()
 a = 100/(np.log(min(lifetime2[:-1])) - np.log(max(lifetime2[:-1])))
 b = 5 - a*np.log(max(lifetime2[:-1]))
 scales = [a*np.log(x) + b for x in lifetime2[:-1]]
-xs, ys = data1["xs"], data1["ys"]
+xs, ys = data_me["xs"], data_me["ys"]
 
-long_routes = [[idx] + r for idx, r in enumerate(data2["routes"]) if r]# and len(r) > 4]
+long_routes = [[idx] + r for idx, r in enumerate(data_ml["routes"]) if r]# and len(r) > 4]
 for route in long_routes:
     xx, yy = zip(*[(xs[idx], ys[idx]) for idx in route])
     plt.plot(xx, yy)

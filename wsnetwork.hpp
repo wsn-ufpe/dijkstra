@@ -28,6 +28,15 @@ public:
 	const int* get_best_routing_table() const { return _best_routing_table.get(); }
 	const int* get_best_routes_len() const { return _best_routes_len.get(); }
 
+	double get_x_min() const { return _x_min; }
+	double get_x_max() const { return _x_max; }
+	double get_y_min() const { return _y_min; }
+	double get_y_max() const { return _y_max; }
+
+	WSNode* get_sink() { return &_nodes[_sink_idx]; }
+	const WSNode* get_sink() const { return &_nodes[_sink_idx]; }
+	void set_sink(WSNode* new_sink) { _nodes[_sink_idx] = *new_sink; }
+
 protected:
 	void update_traffic_along_route(int src_idx, const int* route,
 					int route_len, double msg_rate);
@@ -45,6 +54,8 @@ protected:
 	int _sink_idx;
         int _network_size;
 	int _nbr_iter;
+	double _x_min, _x_max;
+	double _y_min, _y_max;
 	std::unique_ptr<int[]> _routing_table;
 	std::unique_ptr<int[]> _routes_len;
 	std::unique_ptr<int[]> _best_routing_table;

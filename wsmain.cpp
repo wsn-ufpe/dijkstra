@@ -13,11 +13,27 @@
 
 using std::string;
 
-void output_data(const WSNetwork* network, const char filename[]);
+class WSOutputSinkOptimization {
+public:
+    WSOutputSinkOptimization(std::string filename);
+    ~WSOutputSinkOptimization();
+    void push_header(WSNetwork* p_network);
+    void push_sink(WSNetwork* network);
+    void push_results(WSNetwork* network, const char section_name[]);
+
+protected:
+    std::string _filename;
+    std::ofstream _data_file;
+    Json::Value _json_root;
+    Json::Value _json_iteration;
+    Json::Value _json_iterations;
+};
+
 
 const int DEF_NBR_NODES = 100;
 const int DEF_NBR_ITER = 50000;
 const int DEF_SEED = 654321;
+const int DEF_NBR_STEPS = 10;
 const float DEF_PATH_LOSS = 2;
 const float DEF_FIELD_SIZE = 500;
 const float DEF_BATTERY = 5;
@@ -43,6 +59,10 @@ int main(int argc, char* argv[])
                                          DEF_FIELD_SIZE, "float", cmd);
     TCLAP::ValueArg<float> y_dim_arg("y", "ydim", "Rectangular field Y size in meters", false,
                                          DEF_FIELD_SIZE, "float", cmd);
+    TCLAP::ValueArg<int> x_nbr_steps_arg("", "x_steps", "Number of positions in the x dimension",
+					 false, DEF_NBR_STEPS, "int", cmd);
+    TCLAP::ValueArg<int> y_nbr_steps_arg("", "y_steps", "Number of positions in the y dimension",
+					 false, DEF_NBR_STEPS, "int", cmd);
     TCLAP::ValueArg<float> path_loss_arg("p", "pathloss", "Path loss exponent", false,
                                          DEF_PATH_LOSS, "float", cmd);
     TCLAP::ValueArg<float> battery_arg("b", "battery", "Battery capacity", false,
@@ -69,64 +89,128 @@ int main(int argc, char* argv[])
             return 1;
         }
 	network.calculate_neighborhoods();
-    } while(tries++ < MAX_TRIES && !network.is_connected());
 
-    if(tries >= MAX_TRIES) {
-	std::cerr << "The network is partitioned into two or more disconnected " << std::endl
-		  << "subnetworks.  Aborting..." << std::endl;
-	return 2;
-    }
+	if(tries++ >= MAX_TRIES) {
+	    std::cerr << "The network is partitioned into two or more disconnected " << std::endl
+		      << "subnetworks.  Aborting..." << std::endl;
+	    return 2;
+	}
+    } while(!network.is_connected());
 
-    network.optimize_minimum_energy();
-    output_data(&network, ("min_energy_" + output_file_arg.getValue() + ".dat").c_str());
+    double x_step = (network.get_x_max() - network.get_x_min())/(x_nbr_steps_arg.getValue() - 1);
+    double y_step = (network.get_y_max() - network.get_y_min())/(y_nbr_steps_arg.getValue() - 1);
+    WSOutputSinkOptimization output(output_file_arg.getValue());
+    output.push_header(&network);
+    /* We make y span from the maximum to the minimum to make the
+       output compaitble with numpy.imshow() */
+    for(double y=network.get_y_max(); y>network.get_y_min() - y_step/2; y-=y_step)
+	for(double x=network.get_x_min(); x<network.get_x_max() + x_step/2; x+=x_step) {
+	    WSNode* sink = network.get_sink();
+	    sink->set_x(x);
+	    sink->set_y(y);
 
-    if(!network.optimize_maximum_lifetime()){
-            std::cerr << "Optmization for lifetime stopped due to the "
-		"number of iterations." << std::endl;
-        }
-    output_data(&network, ("max_lifetime_" + output_file_arg.getValue() + ".dat").c_str());
+	    network.calculate_neighborhoods();
+	    if(!network.is_connected()) {
+		std::cerr << "Sink is unreachable.  Ignoring this position..." << std::endl;
+		output.push_sink(&network);
+		output.push_results(0, "energy");
+		output.push_results(0, "lifetime");
+		continue;
+	    }
+	    output.push_sink(&network);
+
+	    network.optimize_minimum_energy();
+	    output.push_results(&network, "energy");
+
+	    if(network.optimize_maximum_lifetime())
+		std::cerr << "Optmization converged!" << std::endl;
+	    else
+		std::cerr << "Optmization didn't converged!" << std::endl;
+	    output.push_results(&network, "lifetime");
+	}
 
     return 0;
 }
 
 
-void output_data(const WSNetwork* network, const char filename[])
+WSOutputSinkOptimization::WSOutputSinkOptimization(std::string filename)
+    : _filename(filename),
+      _data_file(filename + ".dat", std::ofstream::binary),
+      _json_iterations(Json::arrayValue)
 {
-    Json::Value network_value;
+}
+
+WSOutputSinkOptimization::~WSOutputSinkOptimization()
+{
+    if(!_json_iteration.isNull())
+        _json_iterations.append(_json_iteration);
+    _json_root["iterations"] = _json_iterations;
+    _data_file << _json_root << std::endl;
+    _data_file.close();
+}
+
+void WSOutputSinkOptimization::push_header(WSNetwork* p_network)
+{
     Json::Value xs(Json::arrayValue);
     Json::Value ys(Json::arrayValue);
     Json::Value neighborhood_list(Json::arrayValue);
+
+    const WSNode* node = p_network->get_nodes();
+    for(int idx=0; idx<p_network->get_network_size(); idx++, node++) {
+	xs.append(Json::Value(node->get_x()));
+	ys.append(Json::Value(node->get_y()));
+    }
+
+    _json_root["xs"] = xs;
+    _json_root["ys"] = ys;
+}
+
+void WSOutputSinkOptimization::push_sink(WSNetwork* p_network)
+{
+    Json::Value sink_position;
+
+    if(!_json_iteration.isNull())
+        _json_iterations.append(_json_iteration);
+
+    sink_position["x"] = p_network->get_sink()->get_x();
+    sink_position["y"] = p_network->get_sink()->get_y();
+
+    _json_iteration["sink_position"] = sink_position;
+}
+
+void WSOutputSinkOptimization::push_results(WSNetwork* p_network, const char section_name[])
+{
+    Json::Value resultados;
     Json::Value incoming_traffic(Json::arrayValue);
     Json::Value outgoing_traffic(Json::arrayValue);
     Json::Value consumption(Json::arrayValue);
     Json::Value lifetime(Json::arrayValue);
     Json::Value routes(Json::arrayValue);
-    std::unique_ptr<Json::Value[]> routes_values(new Json::Value[network->get_network_size()]);
 
-    const WSNode* node = network->get_nodes();
-    const int* routes_len = network->get_routes_len();
-    for(int idx=0; idx<network->get_network_size(); idx++, node++) {
-	xs.append(Json::Value(node->get_x()));
-	ys.append(Json::Value(node->get_y()));
-	outgoing_traffic.append(Json::Value(node->get_outgoing_traffic()));
-	incoming_traffic.append(Json::Value(node->get_incoming_traffic()));
-	consumption.append(Json::Value(node->get_consumption()));
-	lifetime.append(Json::Value(node->get_lifetime()));
+    if(p_network) {
+	std::unique_ptr<Json::Value[]> routes_values(new Json::Value[p_network->get_network_size()]);
 
-	const int* route_vec = network->get_routing_table() +
-	    idx*network->get_network_size();
-	for(int route_idx=0; route_idx<routes_len[idx]; route_idx++)
-	    routes_values[idx].append(*route_vec++);
-	routes.append(routes_values[idx]);
+	const WSNode* node = p_network->get_nodes();
+	const int* routes_len = p_network->get_routes_len();
+	for(int idx=0; idx<p_network->get_network_size(); idx++, node++) {
+	    outgoing_traffic.append(Json::Value(node->get_outgoing_traffic()));
+	    incoming_traffic.append(Json::Value(node->get_incoming_traffic()));
+	    consumption.append(Json::Value(node->get_consumption()));
+	    lifetime.append(Json::Value(node->get_lifetime()));
+
+	    const int* route_vec = p_network->get_routing_table() +
+		idx*p_network->get_network_size();
+	    for(int route_idx=0; route_idx<routes_len[idx]; route_idx++)
+		routes_values[idx].append(*route_vec++);
+	    routes.append(routes_values[idx]);
+	}
     }
-    network_value["xs"] = xs;
-    network_value["ys"] = ys;
-    network_value["outgoing_traffic"] = outgoing_traffic;
-    network_value["incoming_traffic"] = incoming_traffic;
-    network_value["consumption"] = consumption;
-    network_value["lifetime"] = lifetime;
-    network_value["routes"] = routes;
 
-    std::ofstream data_file(filename);
-    data_file << network_value << std::endl;
+    resultados["outgoing_traffic"] = outgoing_traffic;
+    resultados["incoming_traffic"] = incoming_traffic;
+    resultados["consumption"] = consumption;
+    resultados["lifetime"] = lifetime;
+    resultados["routes"] = routes;
+
+    _json_iteration[section_name] = resultados;
 }
