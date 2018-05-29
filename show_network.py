@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import scipy.spatial as spatial
 
-NBR_NODES, FILE_NBR = 200, 1
+NBR_NODES, FILE_NBR = 100, 1
 filename = "n{0}_P1e-8_{1:03d}.dat".format(NBR_NODES, FILE_NBR)
 
 with open(filename) as fp:
@@ -13,7 +13,6 @@ with open(filename) as fp:
 energy_profile1 = 1000*np.array(data["lifetime"]["energy_profile"])
 lifetime_profile1 = np.array(data["lifetime"]["lifetime_profile"])
 
-NBR_NODES, FILE_NBR = 200, 0
 filename = "n{0}_P5e-8_{1:03d}.dat".format(NBR_NODES, FILE_NBR)
 
 with open(filename) as fp:
@@ -48,14 +47,14 @@ xh, yh = points[hull.vertices].T
 xh = np.concatenate((xh, xh[:1]))
 yh = np.concatenate((yh, yh[:1]))
 
-plt.scatter(lifetime_profile1, energy_profile1, "y")
-plt.scatter(lifetime_profile2, energy_profile2, "b")
+plt.scatter(lifetime_profile1, energy_profile1)
+plt.scatter(lifetime_profile2, energy_profile2)
 plt.plot(xh, yh, "ro-")
 plt.xlabel("Lifetime")
 plt.ylabel("Energy (mW)")
 plt.title("Pareto front (N = {})".format(NBR_NODES))
 
-plt.savefig('pareto_front_n200_p5e-8_{:03d}.png'.format(FILE_NBR), bbox_inches="tight", dpi=200)
+plt.savefig('pareto_front_n{}_{:03d}.png'.format(NBR_NODES, FILE_NBR), bbox_inches="tight", dpi=200)
 plt.clf()
 
 plt.show()
