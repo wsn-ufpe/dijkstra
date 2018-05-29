@@ -2,6 +2,9 @@ CXX = g++
 TARGET = wsmain
 BUILD_DIR = ./build
 
+RNG_TYPE=19937
+#RNG_TYPE=2203
+
 SRCS := $(wildcard *.cpp)
 OBJS := $(addsuffix .o,$(basename $(SRCS)))
 OBJS := $(addprefix $(BUILD_DIR)/,$(OBJS))
@@ -12,11 +15,11 @@ INC_FLAGS := $(addprefix -I ,$(INC_DIRS))
 
 CPPFLAGS ?= $(INC_FLAGS) -MMD -MP
 
-CXXFLAGS = -O3 -DDSFMT_MEXP=19937
+CXXFLAGS = -O3 -DDSFMT_MEXP=$(RNG_TYPE)
 # Uncomment the line below for debugging and comment out the above one
-#CFLAGS = -g -DSFMT_MEXP=19937
+#CXXFLAGS = -g -DDSFMT_MEXP=$(RNG_TYPE)
 
-LOADLIBES = -ljsoncpp -ldSFMT-19937
+LOADLIBES = -ljsoncpp -ldSFMT-$(RNG_TYPE)
 LDLIBS =
 
 $(TARGET): $(OBJS)

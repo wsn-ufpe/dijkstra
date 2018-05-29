@@ -11,7 +11,7 @@
 
 class WSNetwork {
 public:
-        WSNetwork(int network_size, WSChannel* channel, int nbr_iter, int seed=654321);
+        WSNetwork(int network_size, WSChannel* channel, int nbr_iter, int seed);
         bool generate_random_network(double x_size, double y_size, double battery,
 				     double msg_rate, double penalty);
 	void calculate_neighborhoods();
@@ -27,6 +27,9 @@ public:
 	int get_best_lifetime() { return _best_min_lifetime; }
 	const int* get_best_routing_table() const { return _best_routing_table.get(); }
 	const int* get_best_routes_len() const { return _best_routes_len.get(); }
+	const double* get_energy_profile() { return _energy_profile.get(); }
+	const double* get_lifetime_profile() { return _lifetime_profile.get(); }
+	int get_profile_size() { return _profile_idx; }
 
 protected:
 	void update_traffic_along_route(int src_idx, const int* route,
@@ -34,12 +37,14 @@ protected:
 	bool check_best();
 	bool is_good_node(int node_idx) const;
 	void set_neighbors(WSNode* node);
-	void find_best_route(bool first_round, int node_idx);
+	void find_best_route(int node_idx, bool first_round=false);
+	void update_stats();
 	void add_penalties();
 	void normalize_penalties();
 	bool check_convergence();
 	int* dijkstra(int src_node_idx, int* route, int* route_len);
 
+        dsfmt_t _rng;
 	std::unique_ptr<WSNode[]> _nodes;
 	std::unique_ptr<WSNode[]> _tmp_nodes;
 	int _sink_idx;
@@ -51,9 +56,11 @@ protected:
 	std::unique_ptr<int[]> _best_routes_len;
 	WSChannel* _channel;
 	double _best_min_lifetime;
+	std::unique_ptr<double[]> _energy_profile;
+	std::unique_ptr<double[]> _lifetime_profile;
+	int _profile_idx;
 	std::unique_ptr<double[]> _nodes_costs;
 	std::unique_ptr<int[]> _predecessors;
-        dsfmt_t _rng;
 
 private:
 	static const double MIN_SQR_DISTANCE;

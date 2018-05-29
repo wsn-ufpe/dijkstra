@@ -2,29 +2,93 @@ from pathlib import Path
 import json
 import numpy as np
 import matplotlib.pyplot as plt
+import scipy.spatial as spatial
 
-suffix = "n100_x500_y500_b5_m100_p1e-7_000"
+NBR_NODES, FILE_NBR = 200, 1
+filename = "n{0}_P1e-8_{1:03d}.dat".format(NBR_NODES, FILE_NBR)
 
-with open("min_energy_" + suffix + ".dat") as fp:
-    data1 = json.load(fp)
+with open(filename) as fp:
+    data = json.load(fp)
 
-with open("max_lifetime_" + suffix + ".dat") as fp:
-    data2 = json.load(fp)
+energy_profile1 = 1000*np.array(data["lifetime"]["energy_profile"])
+lifetime_profile1 = np.array(data["lifetime"]["lifetime_profile"])
 
-lifetime = data1["lifetime"]
-lifetime2 = data2["lifetime"]
-consumption1 = data1["consumption"]
-consumption2 = data2["consumption"]
-print("Minimum lifetime: ", min(lifetime[:-1]))
+NBR_NODES, FILE_NBR = 200, 0
+filename = "n{0}_P5e-8_{1:03d}.dat".format(NBR_NODES, FILE_NBR)
+
+with open(filename) as fp:
+    data = json.load(fp)
+
+energy_profile2 = 1000*np.array(data["lifetime"]["energy_profile"])
+lifetime_profile2 = np.array(data["lifetime"]["lifetime_profile"])
+xs = np.array(data["xs"])
+ys = np.array(data["ys"])
+
+#plt.figure(figsize=(16, 12))
+
+plt.subplot(121)
+plt.plot(lifetime_profile)
+plt.title("Lifetime Profile")
+plt.subplot(122)
+plt.plot(energy_profile)
+plt.title("Energy Profile")
+
+#plt.savefig('sink_position.png', bbox_inches="tight", dpi=200)
+#plt.clf()
+
+plt.show()
+
+plt.figure(figsize=(16, 12))
+
+lifetime_profile = np.concatenate((lifetime_profile1, lifetime_profile2))
+energy_profile = np.concatenate((energy_profile1, energy_profile2))
+points = np.stack((lifetime_profile, energy_profile), axis=-1)
+hull = spatial.ConvexHull(points)
+xh, yh = points[hull.vertices].T
+xh = np.concatenate((xh, xh[:1]))
+yh = np.concatenate((yh, yh[:1]))
+
+plt.scatter(lifetime_profile1, energy_profile1, "y")
+plt.scatter(lifetime_profile2, energy_profile2, "b")
+plt.plot(xh, yh, "ro-")
+plt.xlabel("Lifetime")
+plt.ylabel("Energy (mW)")
+plt.title("Pareto front (N = {})".format(NBR_NODES))
+
+plt.savefig('pareto_front_n200_p5e-8_{:03d}.png'.format(FILE_NBR), bbox_inches="tight", dpi=200)
+plt.clf()
+
+plt.show()
+
+plt.plot(lifetime_profile, energy_profile)
+plt.title("Pareto front")
+
+#plt.savefig('network_n200_16x16.png', bbox_inches="tight", dpi=200)
+#plt.clf()
+
+plt.show()
+
+print(min(consumptions_me), max(consumptions_me))
+print(min(consumptions_ml), max(consumptions_ml))
+print(min(lifetimes_me), max(lifetimes_me))
+print(min(lifetimes_ml), max(lifetimes_ml))
+
+data_me = iterations[len(iterations)//2]["energy"]
+data_ml = iterations[len(iterations)//2]["lifetime"]
+
+lifetime1 = data_me["lifetime"]
+lifetime2 = data_ml["lifetime"]
+consumption1 = data_me["consumption"]
+consumption2 = data_ml["consumption"]
+print("Minimum lifetime: ", min(lifetime1[:-1]))
 print("Minimum lifetime: ", min(lifetime2[:-1]))
 print("Global consumption: ", 1000*sum(consumption1))
 print("Global consumption: ", 1000*sum(consumption2))
 
-plt.violinplot([lifetime[:-1], lifetime2[:-1]], [1, 3], widths=0.7, showmeans=True,
+plt.violinplot([lifetime1[:-1], lifetime2[:-1]], [1, 3], widths=0.7, showmeans=True,
                showextrema=True, showmedians=True)
 plt.show()
 
-xs, ys = data1["xs"], data1["ys"]
 plt.scatter(xs[:-1], ys[:-1], s=20)
 plt.scatter(xs[-1], ys[-1], s=50, marker="s")
 
@@ -40,9 +104,9 @@ plt.show()
 a = 100/(np.log(min(lifetime2[:-1])) - np.log(max(lifetime2[:-1])))
 b = 5 - a*np.log(max(lifetime2[:-1]))
 scales = [a*np.log(x) + b for x in lifetime2[:-1]]
-xs, ys = data1["xs"], data1["ys"]
+xs, ys = data_me["xs"], data_me["ys"]
 
-long_routes = [[idx] + r for idx, r in enumerate(data2["routes"]) if r]# and len(r) > 4]
+long_routes = [[idx] + r for idx, r in enumerate(data_ml["routes"]) if r]# and len(r) > 4]
 for route in long_routes:
     xx, yy = zip(*[(xs[idx], ys[idx]) for idx in route])
     plt.plot(xx, yy)

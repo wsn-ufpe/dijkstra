@@ -13,7 +13,19 @@
 
 using std::string;
 
-void output_data(const WSNetwork* network, const char filename[]);
+class WSOutputProfiling {
+public:
+    WSOutputProfiling(std::string filename);
+    ~WSOutputProfiling();
+    void push_header(WSNetwork* p_network);
+    void push_results(WSNetwork* network, const char section_name[]);
+
+protected:
+    std::string _filename;
+    std::ofstream _data_file;
+    Json::Value _json_root;
+};
+
 
 const int DEF_NBR_NODES = 100;
 const int DEF_NBR_ITER = 50000;
@@ -69,64 +81,100 @@ int main(int argc, char* argv[])
             return 1;
         }
 	network.calculate_neighborhoods();
-    } while(tries++ < MAX_TRIES && !network.is_connected());
 
-    if(tries >= MAX_TRIES) {
-	std::cerr << "The network is partitioned into two or more disconnected " << std::endl
-		  << "subnetworks.  Aborting..." << std::endl;
-	return 2;
-    }
+	if(tries++ >= MAX_TRIES) {
+	    std::cerr << "The network is partitioned into two or more disconnected " << std::endl
+		      << "subnetworks.  Aborting..." << std::endl;
+	    return 2;
+	}
+    } while(!network.is_connected());
+
+    WSOutputProfiling output(output_file_arg.getValue());
+    output.push_header(&network);
 
     network.optimize_minimum_energy();
-    output_data(&network, ("min_energy_" + output_file_arg.getValue() + ".dat").c_str());
+    output.push_results(&network, "energy");
 
-    if(!network.optimize_maximum_lifetime()){
-            std::cerr << "Optmization for lifetime stopped due to the "
-		"number of iterations." << std::endl;
-        }
-    output_data(&network, ("max_lifetime_" + output_file_arg.getValue() + ".dat").c_str());
+    if(network.optimize_maximum_lifetime())
+	std::cerr << "Optmization converged!" << std::endl;
+    else
+	std::cerr << "Optmization didn't converged!" << std::endl;
+    output.push_results(&network, "lifetime");
 
     return 0;
 }
 
 
-void output_data(const WSNetwork* network, const char filename[])
+WSOutputProfiling::WSOutputProfiling(std::string filename)
+    : _filename(filename),
+      _data_file(filename + ".dat", std::ofstream::binary)
 {
-    Json::Value network_value;
+}
+
+WSOutputProfiling::~WSOutputProfiling()
+{
+    _data_file << _json_root << std::endl;
+    _data_file.close();
+}
+
+void WSOutputProfiling::push_header(WSNetwork* p_network)
+{
     Json::Value xs(Json::arrayValue);
     Json::Value ys(Json::arrayValue);
     Json::Value neighborhood_list(Json::arrayValue);
+
+    const WSNode* node = p_network->get_nodes();
+    for(int idx=0; idx<p_network->get_network_size(); idx++, node++) {
+	xs.append(Json::Value(node->get_x()));
+	ys.append(Json::Value(node->get_y()));
+    }
+
+    _json_root["xs"] = xs;
+    _json_root["ys"] = ys;
+}
+
+void WSOutputProfiling::push_results(WSNetwork* p_network, const char section_name[])
+{
+    Json::Value resultados;
     Json::Value incoming_traffic(Json::arrayValue);
     Json::Value outgoing_traffic(Json::arrayValue);
     Json::Value consumption(Json::arrayValue);
     Json::Value lifetime(Json::arrayValue);
     Json::Value routes(Json::arrayValue);
-    std::unique_ptr<Json::Value[]> routes_values(new Json::Value[network->get_network_size()]);
 
-    const WSNode* node = network->get_nodes();
-    const int* routes_len = network->get_routes_len();
-    for(int idx=0; idx<network->get_network_size(); idx++, node++) {
-	xs.append(Json::Value(node->get_x()));
-	ys.append(Json::Value(node->get_y()));
+    std::unique_ptr<Json::Value[]> routes_values(new Json::Value[p_network->get_network_size()]);
+
+    const WSNode* node = p_network->get_nodes();
+    const int* routes_len = p_network->get_routes_len();
+    for(int idx=0; idx<p_network->get_network_size(); idx++, node++) {
 	outgoing_traffic.append(Json::Value(node->get_outgoing_traffic()));
 	incoming_traffic.append(Json::Value(node->get_incoming_traffic()));
 	consumption.append(Json::Value(node->get_consumption()));
 	lifetime.append(Json::Value(node->get_lifetime()));
 
-	const int* route_vec = network->get_routing_table() +
-	    idx*network->get_network_size();
+	const int* route_vec = p_network->get_routing_table() +
+	    idx*p_network->get_network_size();
 	for(int route_idx=0; route_idx<routes_len[idx]; route_idx++)
 	    routes_values[idx].append(*route_vec++);
 	routes.append(routes_values[idx]);
     }
-    network_value["xs"] = xs;
-    network_value["ys"] = ys;
-    network_value["outgoing_traffic"] = outgoing_traffic;
-    network_value["incoming_traffic"] = incoming_traffic;
-    network_value["consumption"] = consumption;
-    network_value["lifetime"] = lifetime;
-    network_value["routes"] = routes;
 
-    std::ofstream data_file(filename);
-    data_file << network_value << std::endl;
+    Json::Value energy_profile(Json::arrayValue);
+    Json::Value lifetime_profile(Json::arrayValue);
+    const double* p_energy_profile = p_network->get_energy_profile();
+    const double* p_lifetime_profile = p_network->get_lifetime_profile();
+    for(int idx=0; idx<p_network->get_profile_size(); idx++) {
+	energy_profile.append(*p_energy_profile++);
+	lifetime_profile.append(*p_lifetime_profile++);
+    }
+
+    resultados["outgoing_traffic"] = outgoing_traffic;
+    resultados["incoming_traffic"] = incoming_traffic;
+    resultados["consumption"] = consumption;
+    resultados["lifetime"] = lifetime;
+    resultados["routes"] = routes;
+    resultados["energy_profile"] = energy_profile;
+    resultados["lifetime_profile"] = lifetime_profile;
+
+    _json_root[section_name] = resultados;
 }

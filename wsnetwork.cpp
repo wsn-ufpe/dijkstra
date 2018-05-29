@@ -21,6 +21,9 @@ WSNetwork::WSNetwork(int network_size, WSChannel* channel, int nbr_iter, int see
       _channel(channel),
       _nbr_iter(nbr_iter),
       _best_min_lifetime(-1),
+      _energy_profile(new double[nbr_iter+1]),
+      _lifetime_profile(new double[nbr_iter+1]),
+      _profile_idx(0),
       _nodes_costs(new double[network_size]),
       _predecessors(new int[network_size])
 {
@@ -107,27 +110,34 @@ bool WSNetwork::is_connected()
 bool WSNetwork::optimize_maximum_lifetime()
 {
     int counter = 0;
-    int node_idx = 0;
-    bool first_round = true;
-
+    int node_idx;
     bool has_converged = false;
-    for(int node_idx=0; node_idx<_network_size; node_idx++)
-	_nodes[node_idx].reset_counters();
-    do {
-	this->find_best_route(first_round, node_idx);
-	if(this->check_best()) {
-	    std::cout << "On iteration " << counter << " Min lifetime " << _best_min_lifetime
-		      << std::endl;
-	}
-	this->add_penalties();
-	if(++node_idx >= _network_size-1) {
-	    node_idx = 0;
-	    first_round = false;
-	    this->normalize_penalties();
-	    has_converged = this->check_convergence();
-	}
-    } while(!has_converged && (++counter < _nbr_iter));
 
+    _profile_idx = 0;
+    for(node_idx=0; node_idx<_network_size; node_idx++)
+	_nodes[node_idx].reset_counters();
+    for(node_idx=_network_size-2; node_idx>=0; node_idx--)
+	this->find_best_route(node_idx, true);
+    this->update_stats();
+
+    node_idx = 0;
+    while(!has_converged) {
+	for(node_idx=0; node_idx<_network_size-1; node_idx++) {
+	    this->find_best_route(node_idx);
+	    this->update_stats();
+	    if(this->check_best()) {
+		std::cout << "On iteration " << counter << " Min lifetime " << _best_min_lifetime
+			  << std::endl;
+	    }
+	    this->add_penalties();
+	    if(++counter >= _nbr_iter)
+		goto enough;
+	}
+	this->normalize_penalties();
+	has_converged = this->check_convergence();
+    }
+
+ enough:
     _routing_table.swap(_best_routing_table);
     _routes_len.swap(_best_routes_len);
     this->calculate_consumption();
@@ -136,7 +146,7 @@ bool WSNetwork::optimize_maximum_lifetime()
 }
 
 
-void WSNetwork::find_best_route(bool first_round, int node_idx)
+void WSNetwork::find_best_route(int node_idx, bool first_round)
 {
     double src_msg_rate = _nodes[node_idx].get_msg_rate();
     int* route = &_routing_table[node_idx*_network_size];
@@ -162,6 +172,21 @@ void WSNetwork::update_traffic_along_route(int src_idx, const int* route, int ro
 	dst_node->update_incoming_counters(msg_rate, cost);
 	src_node = dst_node;
     }
+}
+
+
+void WSNetwork::update_stats()
+{
+    double total_energy = 0;
+    double min_lifetime = FLT_MAX;
+    for(int node_idx=_network_size-2; node_idx>=0; node_idx--) {
+	total_energy += _nodes[node_idx].get_consumption();
+	if(_nodes[node_idx].get_lifetime() < min_lifetime)
+	    min_lifetime = _nodes[node_idx].get_lifetime();
+    }
+
+    _energy_profile[_profile_idx] = total_energy;
+    _lifetime_profile[_profile_idx++] = min_lifetime;
 }
 
 
@@ -253,17 +278,18 @@ bool WSNetwork::check_convergence()
 
 bool WSNetwork::optimize_minimum_energy()
 {
+    _profile_idx = 0;
     for(int node_idx=0; node_idx<_network_size; node_idx++)
 	_nodes[node_idx].reset_counters();
 
     for(int node_idx=_network_size-2; node_idx>=0; node_idx--) {
 	int* route = &_routing_table[node_idx*_network_size];
 	int* p_route_len = &_routes_len[node_idx];
-	double src_msg_rate = _nodes[node_idx].get_msg_rate();
 	this->dijkstra(node_idx, route, p_route_len);
     }
 
     this->calculate_consumption();
+    this->update_stats();
 
     return true;
 }
