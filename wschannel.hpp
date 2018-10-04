@@ -6,7 +6,9 @@
 
 class WSChannel {
 public:
-	WSChannel(double power_factor) : _power_factor(power_factor) {}
+	WSChannel(double power_factor, bool all_reachable=false)
+		: _power_factor(power_factor), _all_reachable(all_reachable)
+	{}
 	double get_link_cost(const WSNode* src, const WSNode* dst, double msg_rate) const;
 	double get_link_outgoing_cost(const WSNode* src, const WSNode* dst, double msg_rate) const;
 	double get_link_incoming_cost(const WSNode* dst, double msg_rate) const;
@@ -14,6 +16,7 @@ public:
 
 protected:
 	double _power_factor;
+	bool _all_reachable;
 };
 
 #endif // WSCHANNEL_HPP

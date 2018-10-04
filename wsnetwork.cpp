@@ -1,6 +1,7 @@
 // -*- c-basic-offset: 4; -*-
 #include <iostream>
 #include <float.h>
+#include <math.h>
 #include "wsnetwork.hpp"
 #include "wschannel.hpp"
 
@@ -69,6 +70,22 @@ bool WSNetwork::is_good_node(int node_idx) const
 }
 
 
+void WSNetwork::set_network(const double* xs, const double* ys, const double* batteries,
+			    double msg_rate, double penalty_increment)
+{
+    for(int node_idx=0; node_idx<_network_size; node_idx++) {
+	_nodes[node_idx].set_x(xs[node_idx]);
+	_nodes[node_idx].set_y(ys[node_idx]);
+	_nodes[node_idx].set_battery(batteries[node_idx]);
+	_nodes[node_idx].set_msg_rate(msg_rate);
+	_nodes[node_idx].set_penalty_increment(penalty_increment);
+
+        _tmp_nodes[node_idx] = _nodes[node_idx];
+    }
+}
+
+
+
 void WSNetwork::calculate_neighborhoods()
 {
     for(int n1_idx=_network_size-2; n1_idx>=0; n1_idx--)
@@ -111,8 +128,7 @@ bool WSNetwork::optimize_maximum_lifetime()
     bool first_round = true;
 
     bool has_converged = false;
-    for(int node_idx=0; node_idx<_network_size; node_idx++)
-	_nodes[node_idx].reset_counters();
+    this->reset_counters();
     do {
 	this->find_best_route(first_round, node_idx);
 	if(this->check_best()) {
@@ -126,7 +142,8 @@ bool WSNetwork::optimize_maximum_lifetime()
 	    this->normalize_penalties();
 	    has_converged = this->check_convergence();
 	}
-    } while(!has_converged && (++counter < _nbr_iter));
+	counter++;
+    } while(!has_converged && (counter < _nbr_iter));
 
     _routing_table.swap(_best_routing_table);
     _routes_len.swap(_best_routes_len);
@@ -136,16 +153,53 @@ bool WSNetwork::optimize_maximum_lifetime()
 }
 
 
+void WSNetwork::reset_counters()
+{
+    for(int node_idx=0; node_idx<_network_size; node_idx++)
+	_nodes[node_idx].reset_counters();
+    _best_min_lifetime = -1;
+}
+
+void WSNetwork::redistribute_batteries(float unit_battery)
+{
+    double total_battery = 0, total_consumption = 0;
+    for(int node_idx=_network_size - 2; node_idx>=0; node_idx--) {
+	total_battery += _nodes[node_idx].get_battery();
+	total_consumption += _nodes[node_idx].get_consumption();
+    }
+    double remaining_battery = total_battery;
+    for(int node_idx=_network_size - 2; node_idx>=0; node_idx--) {
+	int tmp = (int) (_nodes[node_idx].get_consumption()*total_battery/total_consumption);
+	if (tmp < unit_battery)
+	    tmp = unit_battery;
+	_nodes[node_idx].set_battery(tmp);
+	remaining_battery -= tmp;
+    }
+
+    int min_idx = -1;
+    double min_lifetime = FLT_MAX;
+    for(int node_idx=_network_size - 2; node_idx>=0; node_idx--)
+	if(_nodes[node_idx].get_lifetime() < min_lifetime) {
+	    min_idx = node_idx;
+	    min_lifetime = _nodes[node_idx].get_lifetime();
+	}
+    _nodes[min_idx].set_battery(_nodes[min_idx].get_battery() + remaining_battery);
+
+    for(int node_idx=_network_size - 2; node_idx>=0; node_idx--)
+	_tmp_nodes[node_idx] = _nodes[node_idx];
+}
+
+
 void WSNetwork::find_best_route(bool first_round, int node_idx)
 {
     double src_msg_rate = _nodes[node_idx].get_msg_rate();
-    int* route = &_routing_table[node_idx*_network_size];
+    int* p_route = &_routing_table[node_idx*_network_size];
     int* p_route_len = &_routes_len[node_idx];
 
     if (!first_round)
-	this->update_traffic_along_route(node_idx, route, *p_route_len, -src_msg_rate);
-    assert(this->dijkstra(node_idx, route, p_route_len)); /* dijkstra shouldn't be 0 */
-    this->update_traffic_along_route(node_idx, route, *p_route_len, src_msg_rate);
+	this->update_traffic_along_route(node_idx, p_route, *p_route_len, -src_msg_rate);
+    assert(this->dijkstra(node_idx, p_route, p_route_len)); /* dijkstra shouldn't be 0 */
+    this->update_traffic_along_route(node_idx, p_route, *p_route_len, src_msg_rate);
 }
 
 
@@ -256,6 +310,8 @@ bool WSNetwork::optimize_minimum_energy()
     for(int node_idx=0; node_idx<_network_size; node_idx++)
 	_nodes[node_idx].reset_counters();
 
+    _routes_len[_network_size-1] = 0;
+    _routing_table[_network_size*(_network_size - 1)] = _network_size - 1;
     for(int node_idx=_network_size-2; node_idx>=0; node_idx--) {
 	int* route = &_routing_table[node_idx*_network_size];
 	int* p_route_len = &_routes_len[node_idx];

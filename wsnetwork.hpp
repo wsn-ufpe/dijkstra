@@ -12,14 +12,17 @@
 class WSNetwork {
 public:
         WSNetwork(int network_size, WSChannel* channel, int nbr_iter, int seed=654321);
-        bool generate_random_network(double x_size, double y_size, double battery,
+        bool generate_random_network(double x_size, double y_size,  double battery,
 				     double msg_rate, double penalty);
+	void set_network(const double* x, const double* y, const double* batteries,
+			 double msg_rate, double penalty);
 	void calculate_neighborhoods();
 	void calculate_consumption();
         bool is_connected();
 	bool optimize_minimum_energy();
 	bool optimize_maximum_lifetime();
-
+	void redistribute_batteries(float unit_battery);
+	void reset_counters();
 	const WSNode* get_nodes() const { return _nodes.get(); }
 	int get_network_size() const { return _network_size; }
 	const int* get_routing_table() const { return _routing_table.get(); }

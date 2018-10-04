@@ -25,7 +25,7 @@ WSNode::WSNode(const WSNode& src)
 }
 
 
-WSNode::WSNode(float x, float y, float battery_capacity, float msg_rate, float penalty)
+WSNode::WSNode(double x, double y, double battery_capacity, double msg_rate, double penalty)
     : _neighbors(0), _neighbors_size(0), _x(x), _y(y), _consumption(0),
       _outgoing_traffic(0), _incoming_traffic(0),
       _battery_capacity(battery_capacity), _msg_rate(msg_rate),

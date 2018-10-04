@@ -27,7 +27,7 @@ double WSChannel::get_link_incoming_cost(const WSNode* dst, double msg_rate) con
 bool WSChannel::is_within_range(const WSNode* src, const WSNode* dst) const
 {
     double dist = src->squared_distance_from(dst->get_x(), dst->get_y());
-    if(dist > 0 and dist <= RADIO_RANGE_RADIUS*RADIO_RANGE_RADIUS)
+    if(dist > 0 && (_all_reachable || dist <= RADIO_RANGE_RADIUS*RADIO_RANGE_RADIUS))
 	return true;
     return false;
 }

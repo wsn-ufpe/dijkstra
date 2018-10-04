@@ -14,7 +14,7 @@ CPPFLAGS ?= $(INC_FLAGS) -MMD -MP
 
 CXXFLAGS = -O3 -DDSFMT_MEXP=19937
 # Uncomment the line below for debugging and comment out the above one
-#CFLAGS = -g -DSFMT_MEXP=19937
+#CXXFLAGS = -g -DDSFMT_MEXP=19937
 
 LOADLIBES = -ljsoncpp -ldSFMT-19937
 LDLIBS =

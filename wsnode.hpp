@@ -9,7 +9,7 @@ class WSNode {
 public:
 	WSNode();
         WSNode(const WSNode& src);
-	WSNode(float x, float y, float battery_capacity, float msg_rate, float penalty);
+	WSNode(double x, double y, double battery_capacity, double msg_rate, double penalty);
         WSNode& operator=(const WSNode& src);
 
 	double squared_distance_from(double x, double y) const;
@@ -34,10 +34,14 @@ public:
 	double get_incoming_traffic() const { return _incoming_traffic; }
 	double get_consumption() const { return _consumption; }
 	double get_lifetime() const { return _battery_capacity/_consumption; }
+	double get_battery() const { return _battery_capacity; }
 	double get_x() const { return _x; }
 	double get_y() const { return _y; }
 	void set_x(double x) { _x = x; }
 	void set_y(double y) { _y = y; }
+	void set_battery(double battery) { _battery_capacity = battery; }
+	void set_msg_rate(double msg_rate) { _msg_rate = msg_rate; }
+	void set_penalty_increment(double inc) { _penalty_increment = inc; }
 
 protected:
 	std::unique_ptr<int[]> _neighbors;
