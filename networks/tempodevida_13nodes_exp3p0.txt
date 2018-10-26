@@ -1,0 +1,125 @@
+# Arquivo que define a rede: network_diamond4_c.json
+
+#Maximizar o tempo de vida da rede. Assume-se que a quantidade de bancos de bateria por no pode ser encontrada pelo MILP.
+
+set NO;                             # Conjunto de nos
+set NB;                             # Conjunto de baterias
+set ENLACES within (NO cross NO); 	# Conjunto de enlaces
+
+
+
+param Q{s in NO}>=0;            # Trafego originado no no s
+param et{(i,j) in ENLACES}>=0; 	# Energia minima gasta por bit no no i para a transmissao de um pacote ao no j
+param epr{i in NO}>=0;          # Energia minima gasta por bit no no i no processamento de um pacote na recepcao
+param ept{i in NO}>=0;          # Energia minima gasta por bit no no i no processamento de um pacote na transmissao
+param G:=1000;                 
+
+param Pmax:=100000;
+param W:=1;                     # Capacidade de carga (ex. em Joule) de um modulo de bateria
+param Cmax:=84;                 # Capacidade de carga maxima a ser distribuida na rede
+
+
+
+var QQ{s in NO,(i,j) in ENLACES}>=0; 	# Trafego de s que passa pelo enlace i-j 
+var A{s in NO,(i,j) in ENLACES} binary;	# Indica se o trafego de s passa pelo enlace i-j
+var b{i in NO, c in NB} binary;         # Representacao binaria para a quantidade de bancos de bateria no no i
+var y{i in NO, c in NB} >=0;            # Usada para linearizar o produto b[i,c]*PP
+var PP>=0;            			# Taxa de consumo de energia maxima dos nos
+var EE{i in NO} >=0;   
+var BB{i in NO} >=0;                              
+
+minimize Taxa:PP;
+
+
+
+subject to restricao2 {i in NO, s in NO}:
+sum{j in NO diff {i}}QQ[s,i,j] -
+sum{j in NO diff {i}}QQ[s,j,i] =
+(if 1 = i then -Q[s]
+ else if  s = i  then Q[s]
+      else 0);
+
+subject to restricao3{s in NO, (i,j) in ENLACES}:
+QQ[s,i,j]/G<=A[s,i,j];
+
+subject to restricao4{s in NO, i in NO}:
+sum{j in NO diff {i}}A[s,i,j]<=1;
+
+subject to restricao5{i in NO diff{1}}:
+((sum{s in NO, j in NO diff {i}}QQ[s,i,j]*et[i,j])+ (sum{s in NO, j in NO diff {i}}(QQ[s,j,i]*epr[i])) + (sum{s in NO,j in NO diff {i}}QQ[s,i,j]*ept[i])) <= W*(sum{c in NB}2^c*y[i,c]);
+
+
+subject to restricao6uh{i in NO diff{1}}:
+((sum{s in NO, j in NO diff {i}}QQ[s,i,j]*et[i,j])+ (sum{s in NO, j in NO diff {i}}(QQ[s,j,i]*epr[i])) + (sum{s in NO,j in NO diff {i}}QQ[s,i,j]*ept[i])) = EE[i];
+
+
+subject to restricao7hj{i in NO}:
+ W*(sum{c in NB}2^c*b[i,c])=BB[i];
+
+
+subject to restricao6{i in NO, c in NB}:
+y[i,c]<=Pmax*b[i,c];
+
+subject to restricao7{i in NO, c in NB}:
+y[i,c]<=PP;
+
+
+subject to restricao8{i in NO, c in NB}:
+PP-Pmax*(1-b[i,c])<=y[i,c];
+
+
+
+subject to restricao9:
+sum{i in NO diff{1}, c in NB} (b[i,c]*(2^c))=Cmax;
+
+subject to restricao10:
+sum{c in NB} b[1,c]=0;
+
+
+
+subject to restricao11{i in NO diff{1}}:
+sum{c in NB} b[i,c]>=1;
+
+
+
+
+data;
+
+set NO := 1 2 3 4 5 6 7 8 9 10 11 12 13;
+set NB:= 0 1 2 3 4 5 6 7; 
+
+set ENLACES:
+	1	2	3	4	5	6	7	8	9	10	11	12	13:=
+1	-	+	+	+	+	+	+	+	+	+	+	+	+
+2	+	-	+	+	+	+	+	+	+	+	+	+	+
+3	+	+	-	+	+	+	+	+	+	+	+	+	+
+4	+	+	+	-	+	+	+	+	+	+	+	+	+
+5	+	+	+	+	-	+	+	+	+	+	+	+	+
+6	+	+	+	+	+	-	+	+	+	+	+	+	+
+7	+	+	+	+	+	+	-	+	+	+	+	+	+
+8	+	+	+	+	+	+	+	-	+	+	+	+	+
+9	+	+	+	+	+	+	+	+	-	+	+	+	+
+10	+	+	+	+	+	+	+	+	+	-	+	+	+
+11	+	+	+	+	+	+	+	+	+	+	-	+	+
+12	+	+	+	+	+	+	+	+	+	+	+	-	+
+13	+	+	+	+	+	+	+	+	+	+	+	+	-;
+
+param et[*,*]:
+	1	2	3	4	5	6	7	8	9	10	11	12	13:=
+1	.	2.733311e-03	4.140164e-03	2.162587e-02	4.415313e-03	1.990539e-02	1.915061e-02	1.936537e-02	6.456163e-02	3.261267e-02	6.770633e-02	7.673756e-02	7.704457e-02
+2	2.733311e-03	.	1.688628e-02	2.731875e-03	2.874986e-03	4.190979e-02	4.962971e-03	2.323750e-02	2.128931e-02	1.895482e-02	8.476090e-02	3.809402e-02	6.737953e-02
+3	4.140164e-03	1.688628e-02	.	5.089617e-02	4.684345e-03	1.420020e-03	2.571755e-02	4.494115e-03	8.759656e-02	2.222402e-02	1.925836e-02	6.953382e-02	3.598076e-02
+4	2.162587e-02	2.731875e-03	5.089617e-02	.	9.890949e-03	8.549693e-02	2.614270e-03	3.995113e-02	4.069263e-03	1.731438e-02	1.168547e-01	1.930273e-02	7.005867e-02
+5	4.415313e-03	2.874986e-03	4.684345e-03	9.890949e-03	.	1.152513e-02	2.139737e-03	2.949221e-03	2.137208e-02	3.756387e-03	2.631237e-02	1.898605e-02	2.055025e-02
+6	1.990539e-02	4.190979e-02	1.420020e-03	8.549693e-02	1.152513e-02	.	3.820407e-02	2.525706e-03	1.105687e-01	2.191498e-02	4.977106e-03	6.964402e-02	2.015895e-02
+7	1.915061e-02	4.962971e-03	2.571755e-02	2.614270e-03	2.139737e-03	3.820407e-02	.	1.047771e-02	3.304126e-03	1.776184e-03	4.557931e-02	4.580223e-03	2.071468e-02
+8	1.936537e-02	2.323750e-02	4.494115e-03	3.995113e-02	2.949221e-03	2.525706e-03	1.047771e-02	.	4.385878e-02	2.995377e-03	3.654198e-03	2.085452e-02	4.594743e-03
+9	6.456163e-02	2.128931e-02	8.759656e-02	4.069263e-03	2.137208e-02	1.105687e-01	3.304126e-03	4.385878e-02	.	1.059835e-02	1.043851e-01	3.313262e-03	4.390774e-02
+10	3.261267e-02	1.895482e-02	2.222402e-02	1.731438e-02	3.756387e-03	2.191498e-02	1.776184e-03	2.995377e-03	1.059835e-02	.	1.592082e-02	2.338513e-03	3.620347e-03
+11	6.770633e-02	8.476090e-02	1.925836e-02	1.168547e-01	2.631237e-02	4.977106e-03	4.557931e-02	3.654198e-03	1.043851e-01	1.592082e-02	.	4.535026e-02	3.465625e-03
+12	7.673756e-02	3.809402e-02	6.953382e-02	1.930273e-02	1.898605e-02	6.964402e-02	4.580223e-03	2.085452e-02	3.313262e-03	2.338513e-03	4.535026e-02	.	1.054590e-02
+13	7.704457e-02	6.737953e-02	3.598076e-02	7.005867e-02	2.055025e-02	2.015895e-02	2.071468e-02	4.594743e-03	4.390774e-02	3.620347e-03	3.465625e-03	1.054590e-02	.;
+
+param Q[*]:= 1 0 2 100 3 100 4 100 5 100 6 100 7 100 8 100 9 100 10 100 11 100 12 100 13 100;
+param epr[*]:= 1 5e-05 2 5e-05 3 5e-05 4 5e-05 5 5e-05 6 5e-05 7 5e-05 8 5e-05 9 5e-05 10 5e-05 11 5e-05 12 5e-05 13 5e-05;
+param ept[*]:= 1 5e-05 2 5e-05 3 5e-05 4 5e-05 5 5e-05 6 5e-05 7 5e-05 8 5e-05 9 5e-05 10 5e-05 11 5e-05 12 5e-05 13 5e-05;

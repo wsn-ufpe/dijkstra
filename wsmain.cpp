@@ -24,6 +24,7 @@ const double DEF_BATTERY = 6;
 const double DEF_RATE = 100;
 const double DEF_PENALTY = 1e-7;
 const double DEF_UNIT_BATTERY = 1.0;
+const double DEF_MAX_REDISTRIB = 20;
 
 int main(int argc, char* argv[])
 {
@@ -50,6 +51,8 @@ int main(int argc, char* argv[])
                                          DEF_BATTERY, "double", cmd);
     TCLAP::ValueArg<double> msg_rate_arg("r", "msgrate", "Message rate in bits per time unit", false,
                                          DEF_RATE, "double", cmd);
+    TCLAP::ValueArg<int> nbr_redistrib_arg("R", "nbrredistrib", "Number of battery redistributions", false,
+                                       DEF_MAX_REDISTRIB, "int", cmd);
     TCLAP::ValueArg<double> penalty_arg("P", "penalty", "Penalty value", false,
                                          DEF_PENALTY, "double", cmd);
     TCLAP::ValueArg<string> network_arg("N", "network", "File with network to be used", false,
@@ -134,7 +137,7 @@ int main(int argc, char* argv[])
 						msg_rate_arg.getValue());
     std::cout << std::endl;
     for(int i=0; i<network.get_network_size() - 1; i++) {
-	std::cout << dummy.get_link_cost(nodes + network.get_network_size() - 1, nodes + i,
+	std::cout << dummy.get_link_cost(nodes + i, nodes + network.get_network_size() - 1,
 					 msg_rate_arg.getValue());
 	for(int j=0; j<network.get_network_size() - 1; j++) {
 	    std::cout << " ";
@@ -150,9 +153,21 @@ int main(int argc, char* argv[])
     network.optimize_minimum_energy();
     output_data(&network, ("min_energy_" + output_file_arg.getValue() + ".dat").c_str());
 
+    std::unique_ptr<double[]> best_batteries(new double[nbr_nodes]);
+
     network.optimize_maximum_lifetime();
+    double best_lifetime = network.get_best_lifetime();
+    network.get_batteries(best_batteries.get(), nbr_nodes);
     output_data(&network, ("max_lifetime_" + output_file_arg.getValue() + "_pre.dat").c_str());
-    network.redistribute_batteries(DEF_UNIT_BATTERY);
+    for(int i=0; i<nbr_redistrib_arg.getValue(); i++) {
+	network.redistribute_batteries(DEF_UNIT_BATTERY);
+	network.optimize_maximum_lifetime();
+	if (best_lifetime < network.get_best_lifetime()) {
+	    best_lifetime = network.get_best_lifetime();
+	    network.get_batteries(best_batteries.get(), nbr_nodes);
+	}
+    }
+    network.set_batteries(best_batteries.get(), nbr_nodes);
     if(network.optimize_maximum_lifetime())
 	std::cerr << "Optmization for lifetime converged." << std::endl;
     output_data(&network, ("max_lifetime_" + output_file_arg.getValue() + "_pos.dat").c_str());

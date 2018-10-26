@@ -71,7 +71,7 @@ inline void WSNode::update_outgoing_counters(double msg_rate, double cost)
 inline void WSNode::update_incoming_counters(double msg_rate, double cost)
 {
 	_incoming_traffic += msg_rate;
-	_consumption += msg_rate*this->get_reception_cost();
+	_consumption += cost;
 }
 
 inline double WSNode::get_transmission_cost(const WSNode* dst) const

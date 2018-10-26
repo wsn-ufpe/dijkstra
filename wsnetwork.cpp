@@ -19,30 +19,45 @@ WSNetwork::WSNetwork(int network_size, WSChannel* channel, int nbr_iter, int see
       _routes_len(new int[network_size]),
       _best_routing_table(new int[network_size*network_size]),
       _best_routes_len(new int[network_size]),
+      _old_route(new int[network_size]),
       _channel(channel),
       _nbr_iter(nbr_iter),
       _best_min_lifetime(-1),
       _nodes_costs(new double[network_size]),
-      _predecessors(new int[network_size])
+      _predecessors(new int[network_size]),
+      _last_penalized(-1),
+      _times_penalized(1)
 {
     dsfmt_init_gen_rand(&_rng, seed);
 }
 
 
+void WSNetwork::reset()
+{
+    _last_penalized = -1;
+    _times_penalized = 1;
+    _best_min_lifetime = -1;
+
+    for(int node_idx=0; node_idx<_network_size; node_idx++) {
+        _nodes[node_idx].reset_counters();
+        _tmp_nodes[node_idx].reset_counters();
+    }
+}
+
 
 const int MAX_ATTEMPTS_GEN_NETWORK = 1000;
 
 bool WSNetwork::generate_random_network(double x_size, double y_size, double battery,
-					double msg_rate, double penalty)
+                                        double msg_rate, double penalty)
 {
     for(int node_idx=0; node_idx<_network_size; node_idx++) {
-	int attempts = 0;
-	do {
-	    if(++attempts > MAX_ATTEMPTS_GEN_NETWORK)
-		return false;
-	    _nodes[node_idx].generate_random_node(0, 0, x_size/2, y_size/2, battery, msg_rate,
-						  penalty, &_rng);
-	} while(!this->is_good_node(node_idx));
+        int attempts = 0;
+        do {
+            if(++attempts > MAX_ATTEMPTS_GEN_NETWORK)
+                return false;
+            _nodes[node_idx].generate_random_node(0, 0, x_size/2, y_size/2, battery, msg_rate,
+                                                  penalty, &_rng);
+        } while(!this->is_good_node(node_idx));
         _tmp_nodes[node_idx] = _nodes[node_idx];
     }
 
@@ -71,25 +86,42 @@ bool WSNetwork::is_good_node(int node_idx) const
 
 
 void WSNetwork::set_network(const double* xs, const double* ys, const double* batteries,
-			    double msg_rate, double penalty_increment)
+                            double msg_rate, double penalty_increment)
 {
     for(int node_idx=0; node_idx<_network_size; node_idx++) {
-	_nodes[node_idx].set_x(xs[node_idx]);
-	_nodes[node_idx].set_y(ys[node_idx]);
-	_nodes[node_idx].set_battery(batteries[node_idx]);
-	_nodes[node_idx].set_msg_rate(msg_rate);
-	_nodes[node_idx].set_penalty_increment(penalty_increment);
+        _nodes[node_idx].set_x(xs[node_idx]);
+        _nodes[node_idx].set_y(ys[node_idx]);
+        _nodes[node_idx].set_battery(batteries[node_idx]);
+        _nodes[node_idx].set_msg_rate(msg_rate);
+        _nodes[node_idx].set_penalty_increment(penalty_increment);
 
         _tmp_nodes[node_idx] = _nodes[node_idx];
     }
 }
 
 
+void WSNetwork::get_batteries(double* best_batteries, int len)
+{
+    assert(len == _network_size);
+    for(int node_idx=0; node_idx<_network_size; node_idx++)
+        best_batteries[node_idx] = _nodes[node_idx].get_battery();
+}
+
+
+void WSNetwork::set_batteries(double* best_batteries, int len)
+{
+    assert(len == _network_size);
+    for(int node_idx=0; node_idx<_network_size; node_idx++) {
+        _nodes[node_idx].set_battery(best_batteries[node_idx]);
+        _tmp_nodes[node_idx].set_battery(best_batteries[node_idx]);
+    }
+}
+
 
 void WSNetwork::calculate_neighborhoods()
 {
     for(int n1_idx=_network_size-2; n1_idx>=0; n1_idx--)
-	this->set_neighbors(&_nodes[n1_idx]);
+        this->set_neighbors(&_nodes[n1_idx]);
 }
 
 
@@ -99,9 +131,9 @@ void WSNetwork::set_neighbors(WSNode* src_node)
 
     int neighbor_idx = 0;
     for(int n1_idx=0; n1_idx<_network_size; n1_idx++) {
-	WSNode* dst_node = &_nodes[n1_idx];
-	if(_channel->is_within_range(src_node, dst_node))
-	    neighbors[neighbor_idx++] = n1_idx;
+        WSNode* dst_node = &_nodes[n1_idx];
+        if(_channel->is_within_range(src_node, dst_node))
+            neighbors[neighbor_idx++] = n1_idx;
     }
 
     src_node->set_neighbors(neighbors.get(), neighbor_idx);
@@ -124,26 +156,40 @@ bool WSNetwork::is_connected()
 bool WSNetwork::optimize_maximum_lifetime()
 {
     int counter = 0;
-    int node_idx = 0;
-    bool first_round = true;
-
+    int node_idx;
+    int last_changed_node = -1;
     bool has_converged = false;
-    this->reset_counters();
+
+    this->reset();
+    for(node_idx=0; node_idx<_network_size-1; node_idx++, counter++) {
+	std::cout << "Iter#" << counter;
+	this->find_best_route(true, node_idx);
+	std::cout << std::endl;
+    }
+    if(this->check_best())
+	std::cout << "On iteration " << counter << " Min lifetime " << _best_min_lifetime
+		  << std::endl;
+
+    node_idx = 0;
     do {
-	this->find_best_route(first_round, node_idx);
-	if(this->check_best()) {
-	    std::cout << "On iteration " << counter << " Min lifetime " << _best_min_lifetime
-		      << std::endl;
-	}
-	this->add_penalties();
-	if(++node_idx >= _network_size-1) {
-	    node_idx = 0;
-	    first_round = false;
-	    this->normalize_penalties();
-	    has_converged = this->check_convergence();
-	}
-	counter++;
+	std::cout << "Iter#" << counter;
+        this->find_best_route(false, node_idx);
+        this->add_penalties();
+	std::cout << std::endl;
+        if(this->check_best()) {
+            std::cout << "On iteration " << counter << " Min lifetime " << _best_min_lifetime
+                      << std::endl;
+        }
+        if(++node_idx >= _network_size-1) {
+            node_idx = 0;
+            this->normalize_penalties();
+            has_converged = this->check_convergence();
+        }
+        counter++;
     } while(!has_converged && (counter < _nbr_iter));
+
+    std::cout << "  Node " << _last_penalized << " penalized " << _times_penalized
+	      << " times" << std::endl;
 
     _routing_table.swap(_best_routing_table);
     _routes_len.swap(_best_routes_len);
@@ -153,68 +199,85 @@ bool WSNetwork::optimize_maximum_lifetime()
 }
 
 
-void WSNetwork::reset_counters()
-{
-    for(int node_idx=0; node_idx<_network_size; node_idx++)
-	_nodes[node_idx].reset_counters();
-    _best_min_lifetime = -1;
-}
-
 void WSNetwork::redistribute_batteries(float unit_battery)
 {
-    double total_battery = 0, total_consumption = 0;
+    double min_lifetime = FLT_MAX, max_lifetime = -1;
+    int min_idx = -1, max_idx = -1;
     for(int node_idx=_network_size - 2; node_idx>=0; node_idx--) {
-	total_battery += _nodes[node_idx].get_battery();
-	total_consumption += _nodes[node_idx].get_consumption();
-    }
-    double remaining_battery = total_battery;
-    for(int node_idx=_network_size - 2; node_idx>=0; node_idx--) {
-	int tmp = (int) (_nodes[node_idx].get_consumption()*total_battery/total_consumption);
-	if (tmp < unit_battery)
-	    tmp = unit_battery;
-	_nodes[node_idx].set_battery(tmp);
-	remaining_battery -= tmp;
+        double lifetime = _nodes[node_idx].get_lifetime();
+        if(lifetime < min_lifetime) {
+            min_lifetime = lifetime;
+            min_idx = node_idx;
+        } else if(lifetime > max_lifetime) {
+            max_lifetime = lifetime;
+            max_idx = node_idx;
+        }
     }
 
-    int min_idx = -1;
-    double min_lifetime = FLT_MAX;
-    for(int node_idx=_network_size - 2; node_idx>=0; node_idx--)
-	if(_nodes[node_idx].get_lifetime() < min_lifetime) {
-	    min_idx = node_idx;
-	    min_lifetime = _nodes[node_idx].get_lifetime();
-	}
-    _nodes[min_idx].set_battery(_nodes[min_idx].get_battery() + remaining_battery);
+    assert(_nodes[max_idx].get_battery() > unit_battery);
+    _nodes[max_idx].set_battery(_nodes[max_idx].get_battery() - 1);
+    _nodes[min_idx].set_battery(_nodes[min_idx].get_battery() + 1);
 
     for(int node_idx=_network_size - 2; node_idx>=0; node_idx--)
-	_tmp_nodes[node_idx] = _nodes[node_idx];
+        _tmp_nodes[node_idx] = _nodes[node_idx];
 }
 
 
-void WSNetwork::find_best_route(bool first_round, int node_idx)
+bool WSNetwork::find_best_route(bool first_round, int node_idx)
 {
     double src_msg_rate = _nodes[node_idx].get_msg_rate();
     int* p_route = &_routing_table[node_idx*_network_size];
     int* p_route_len = &_routes_len[node_idx];
+    int old_route_len = *p_route_len;
 
-    if (!first_round)
-	this->update_traffic_along_route(node_idx, p_route, *p_route_len, -src_msg_rate);
+    if (!first_round) {
+	for(int route_idx=0; route_idx<*p_route_len; route_idx++)
+	    _old_route[route_idx] = p_route[route_idx];;
+        this->update_traffic_along_route(node_idx, p_route, *p_route_len, -src_msg_rate);
+    } else {
+	old_route_len = 0;
+	for(int route_idx=0; route_idx<_network_size; route_idx++)
+	    _old_route[route_idx] = 0;
+    }
+
     assert(this->dijkstra(node_idx, p_route, p_route_len)); /* dijkstra shouldn't be 0 */
+
     this->update_traffic_along_route(node_idx, p_route, *p_route_len, src_msg_rate);
+    bool equal_routes = old_route_len == *p_route_len;
+    if(equal_routes)
+	for(int route_idx=0; route_idx<old_route_len; route_idx++)
+	    if(_old_route[route_idx] != p_route[route_idx]) {
+		equal_routes = false;
+		break;
+	    }
+    if(!equal_routes) {
+	std::cout << " Origem: " << node_idx;
+	if(old_route_len) {
+	    std::cout << " - Pre: ";
+	    for(int route_idx=0; route_idx<old_route_len; route_idx++)
+		std::cout << " " << _old_route[route_idx];
+	}
+	std::cout << " - Pos: ";
+	for(int route_idx=0; route_idx<*p_route_len; route_idx++)
+	    std::cout << " " << p_route[route_idx];
+    }
+
+    return !equal_routes;
 }
 
 
 void WSNetwork::update_traffic_along_route(int src_idx, const int* route, int route_len,
-					   double msg_rate)
+                                           double msg_rate)
 {
     WSNode* src_node = &_nodes[src_idx];
 
     for(int route_idx = 0; route_idx < route_len; route_idx++) {
-	WSNode* dst_node = &_nodes[route[route_idx]];
-	double cost = _channel->get_link_outgoing_cost(src_node, dst_node, msg_rate);
-	src_node->update_outgoing_counters(msg_rate, cost);
-	cost = _channel->get_link_incoming_cost(dst_node, msg_rate);
-	dst_node->update_incoming_counters(msg_rate, cost);
-	src_node = dst_node;
+        WSNode* dst_node = &_nodes[route[route_idx]];
+        double cost = _channel->get_link_outgoing_cost(src_node, dst_node, msg_rate);
+        src_node->update_outgoing_counters(msg_rate, cost);
+        cost = _channel->get_link_incoming_cost(dst_node, msg_rate);
+        dst_node->update_incoming_counters(msg_rate, cost);
+        src_node = dst_node;
     }
 }
 
@@ -228,18 +291,18 @@ bool WSNetwork::check_best()
     this->calculate_consumption();
 
     for(int idx=_network_size-2; idx>=0; idx--)
-	if(_nodes[idx].get_lifetime() < min_lifetime)
-	    min_lifetime = _nodes[idx].get_lifetime();
+        if(_nodes[idx].get_lifetime() < min_lifetime)
+            min_lifetime = _nodes[idx].get_lifetime();
     if(min_lifetime > _best_min_lifetime) {
-	_best_min_lifetime = min_lifetime;
-	for(int node_idx=_network_size-2; node_idx>=0; node_idx--) {
-	    int* route = _routing_table.get() + node_idx*_network_size;
-	    int* best_route = _best_routing_table.get() + node_idx*_network_size;
-	    for(int route_idx=0; route_idx<_routes_len[node_idx]; route_idx++)
-		*best_route++ = *route++;
-	    _best_routes_len[node_idx] = _routes_len[node_idx];
-	} 
-	rc = true;
+        _best_min_lifetime = min_lifetime;
+        for(int node_idx=_network_size-2; node_idx>=0; node_idx--) {
+            int* route = _routing_table.get() + node_idx*_network_size;
+            int* best_route = _best_routing_table.get() + node_idx*_network_size;
+            for(int route_idx=0; route_idx<_routes_len[node_idx]; route_idx++)
+                *best_route++ = *route++;
+            _best_routes_len[node_idx] = _routes_len[node_idx];
+        } 
+        rc = true;
     }
 
     _tmp_nodes.swap(_nodes);
@@ -250,16 +313,24 @@ bool WSNetwork::check_best()
 void WSNetwork::add_penalties()
 {
     double min_lifetime = FLT_MAX;
+    int minidx = -1;
     for(int node_idx=_network_size-2; node_idx>=0; node_idx--) {
-	double lifetime = _nodes[node_idx].get_lifetime();
-	if (lifetime < min_lifetime)
-	    min_lifetime = lifetime;
+        double lifetime = _nodes[node_idx].get_lifetime();
+        if (lifetime < min_lifetime) {
+	    minidx = node_idx;
+            min_lifetime = lifetime;
+	}
     }
-    for(int node_idx=_network_size-2; node_idx>=0; node_idx--) {
-	double lifetime = _nodes[node_idx].get_lifetime();
-	if (lifetime == min_lifetime)
-	    _nodes[node_idx].update_penalty(_nodes[node_idx].get_penalty_increment());
-    }
+
+    _nodes[minidx].update_penalty(_nodes[minidx].get_penalty_increment());
+    if(minidx != _last_penalized) {
+	if(_last_penalized != -1)
+	    std::cout << "  Node " << _last_penalized << " penalized " << _times_penalized
+		      << " times";
+	_times_penalized = 1;
+	_last_penalized = minidx;
+    } else
+	_times_penalized++;
 }
 
 
@@ -288,7 +359,7 @@ bool WSNetwork::check_convergence()
     double min_lifetime = FLT_MAX;
     double max_lifetime = -1;
     for(int node_idx=_network_size-2; node_idx>=0; node_idx--) {
-	double lifetime = _nodes[node_idx].get_lifetime();
+        double lifetime = _nodes[node_idx].get_lifetime();
         if(lifetime > max_lifetime)
             max_lifetime = lifetime;
         if(lifetime < min_lifetime)
@@ -308,15 +379,15 @@ bool WSNetwork::check_convergence()
 bool WSNetwork::optimize_minimum_energy()
 {
     for(int node_idx=0; node_idx<_network_size; node_idx++)
-	_nodes[node_idx].reset_counters();
+        _nodes[node_idx].reset_counters();
 
     _routes_len[_network_size-1] = 0;
     _routing_table[_network_size*(_network_size - 1)] = _network_size - 1;
     for(int node_idx=_network_size-2; node_idx>=0; node_idx--) {
-	int* route = &_routing_table[node_idx*_network_size];
-	int* p_route_len = &_routes_len[node_idx];
-	double src_msg_rate = _nodes[node_idx].get_msg_rate();
-	this->dijkstra(node_idx, route, p_route_len);
+        int* route = &_routing_table[node_idx*_network_size];
+        int* p_route_len = &_routes_len[node_idx];
+        double src_msg_rate = _nodes[node_idx].get_msg_rate();
+        this->dijkstra(node_idx, route, p_route_len);
     }
 
     this->calculate_consumption();
@@ -328,14 +399,14 @@ bool WSNetwork::optimize_minimum_energy()
 void WSNetwork::calculate_consumption()
 {
     for(int node_idx=0; node_idx<_network_size; node_idx++)
-	_nodes[node_idx].reset_counters();
+        _nodes[node_idx].reset_counters();
 
     for(int node_idx=_network_size-2; node_idx>=0; node_idx--) {
-	int* route = &_routing_table[node_idx*_network_size];
-	int* p_route_len = &_routes_len[node_idx];
-	double src_msg_rate = _nodes[node_idx].get_msg_rate();
+        int* route = &_routing_table[node_idx*_network_size];
+        int route_len = _routes_len[node_idx];
+        double src_msg_rate = _nodes[node_idx].get_msg_rate();
 
-	this->update_traffic_along_route(node_idx, route, *p_route_len, src_msg_rate);
+        this->update_traffic_along_route(node_idx, route, route_len, src_msg_rate);
     }
 }
 
@@ -354,16 +425,16 @@ int* WSNetwork::dijkstra(int src_node_idx, int* route, int* route_len)
 
     int best_idx = src_node_idx;
     while(best_idx != _sink_idx) {
-	WSNode* src_node = &_nodes[best_idx];
-	const int* nbs = _nodes[best_idx].get_neighbors();
+        WSNode* src_node = &_nodes[best_idx];
+        const int* nbs = _nodes[best_idx].get_neighbors();
         for(i = 0; i < _nodes[best_idx].get_nbr_neighbors(); i++) {
-	    int nb_idx = *nbs++;
-	    WSNode* dst_node = &_nodes[nb_idx];
-	    double cost = _channel->get_link_cost(src_node, dst_node, src_msg_rate);
-	    if(_nodes_costs[best_idx] + cost < _nodes_costs[nb_idx]) {
-		_nodes_costs[nb_idx] = _nodes_costs[best_idx] + cost;
-		_predecessors[nb_idx] = best_idx;
-	    }
+            int nb_idx = *nbs++;
+            WSNode* dst_node = &_nodes[nb_idx];
+            double cost = _channel->get_link_cost(src_node, dst_node, src_msg_rate);
+            if(_nodes_costs[best_idx] + cost < _nodes_costs[nb_idx]) {
+                _nodes_costs[nb_idx] = _nodes_costs[best_idx] + cost;
+                _predecessors[nb_idx] = best_idx;
+            }
         }
         _nodes_costs[best_idx] = 0;
 
@@ -373,9 +444,9 @@ int* WSNetwork::dijkstra(int src_node_idx, int* route, int* route_len)
                 min = _nodes_costs[i];
                 best_idx = i;
             }
-	if(min == FLT_MAX)
-	    /* There is no path from the source node to the sink node */
-	    return 0;
+        if(min == FLT_MAX)
+            /* There is no path from the source node to the sink node */
+            return 0;
     }
 
     /* Now recover the best route  */
@@ -390,9 +461,9 @@ int* WSNetwork::dijkstra(int src_node_idx, int* route, int* route_len)
     *route_len = hops;
     node_idx = 0;
     while(node_idx < --hops) {
-	int tmp = route[node_idx];
+        int tmp = route[node_idx];
         route[node_idx++] = route[hops];
-	route[hops] = tmp;
+        route[hops] = tmp;
     }
 
     return route;

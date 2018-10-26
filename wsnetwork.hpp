@@ -12,6 +12,7 @@
 class WSNetwork {
 public:
         WSNetwork(int network_size, WSChannel* channel, int nbr_iter, int seed=654321);
+	void reset();
         bool generate_random_network(double x_size, double y_size,  double battery,
 				     double msg_rate, double penalty);
 	void set_network(const double* x, const double* y, const double* batteries,
@@ -22,14 +23,15 @@ public:
 	bool optimize_minimum_energy();
 	bool optimize_maximum_lifetime();
 	void redistribute_batteries(float unit_battery);
-	void reset_counters();
 	const WSNode* get_nodes() const { return _nodes.get(); }
 	int get_network_size() const { return _network_size; }
 	const int* get_routing_table() const { return _routing_table.get(); }
 	const int* get_routes_len() const { return _routes_len.get(); }
-	int get_best_lifetime() { return _best_min_lifetime; }
+	double get_best_lifetime() const { return _best_min_lifetime; }
 	const int* get_best_routing_table() const { return _best_routing_table.get(); }
 	const int* get_best_routes_len() const { return _best_routes_len.get(); }
+	void get_batteries(double* best_batteries, int len);
+	void set_batteries(double* best_batteries, int len);
 
 protected:
 	void update_traffic_along_route(int src_idx, const int* route,
@@ -37,7 +39,7 @@ protected:
 	bool check_best();
 	bool is_good_node(int node_idx) const;
 	void set_neighbors(WSNode* node);
-	void find_best_route(bool first_round, int node_idx);
+	bool find_best_route(bool first_round, int node_idx);
 	void add_penalties();
 	void normalize_penalties();
 	bool check_convergence();
@@ -52,10 +54,13 @@ protected:
 	std::unique_ptr<int[]> _routes_len;
 	std::unique_ptr<int[]> _best_routing_table;
 	std::unique_ptr<int[]> _best_routes_len;
+	std::unique_ptr<int[]> _old_route;
 	WSChannel* _channel;
 	double _best_min_lifetime;
 	std::unique_ptr<double[]> _nodes_costs;
 	std::unique_ptr<int[]> _predecessors;
+	int _times_penalized;
+	int _last_penalized;
         dsfmt_t _rng;
 
 private:

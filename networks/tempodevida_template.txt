@@ -1,0 +1,97 @@
+#Maximizar o tempo de vida da rede. Assume-se que a quantidade de bancos de bateria por no pode ser encontrada pelo MILP.
+
+set NO;                             # Conjunto de nos
+set NB;                             # Conjunto de baterias
+set ENLACES within (NO cross NO); 	# Conjunto de enlaces
+
+
+
+param Q{{s in NO}}>=0;            # Trafego originado no no s
+param et{{(i,j) in ENLACES}}>=0; 	# Energia minima gasta por bit no no i para a transmissao de um pacote ao no j
+param epr{{i in NO}}>=0;          # Energia minima gasta por bit no no i no processamento de um pacote na recepcao
+param ept{{i in NO}}>=0;          # Energia minima gasta por bit no no i no processamento de um pacote na transmissao
+param G:=1000;                 
+
+param Pmax:=100000;
+param W:=1;                     # Capacidade de carga (ex. em Joule) de um modulo de bateria
+param Cmax:={};                 # Capacidade de carga maxima a ser distribuida na rede
+
+
+
+var QQ{{s in NO,(i,j) in ENLACES}}>=0; 	# Trafego de s que passa pelo enlace i-j 
+var A{{s in NO,(i,j) in ENLACES}} binary;	# Indica se o trafego de s passa pelo enlace i-j
+var b{{i in NO, c in NB}} binary;         # Representacao binaria para a quantidade de bancos de bateria no no i
+var y{{i in NO, c in NB}} >=0;            # Usada para linearizar o produto b[i,c]*PP
+var PP>=0;            			# Taxa de consumo de energia maxima dos nos
+var EE{{i in NO}} >=0;   
+var BB{{i in NO}} >=0;                              
+
+minimize Taxa:PP;
+
+
+
+subject to restricao2 {{i in NO, s in NO}}:
+sum{{j in NO diff {{i}}}}QQ[s,i,j] -
+sum{{j in NO diff {{i}}}}QQ[s,j,i] =
+(if 1 = i then -Q[s]
+ else if  s = i  then Q[s]
+      else 0);
+
+subject to restricao3{{s in NO, (i,j) in ENLACES}}:
+QQ[s,i,j]/G<=A[s,i,j];
+
+subject to restricao4{{s in NO, i in NO}}:
+sum{{j in NO diff {{i}}}}A[s,i,j]<=1;
+
+subject to restricao5{{i in NO diff{{1}}}}:
+((sum{{s in NO, j in NO diff {{i}}}}QQ[s,i,j]*et[i,j])+ (sum{{s in NO, j in NO diff {{i}}}}(QQ[s,j,i]*epr[i])) + (sum{{s in NO,j in NO diff {{i}}}}QQ[s,i,j]*ept[i])) <= W*(sum{{c in NB}}2^c*y[i,c]);
+
+
+subject to restricao6uh{{i in NO diff{{1}}}}:
+((sum{{s in NO, j in NO diff {{i}}}}QQ[s,i,j]*et[i,j])+ (sum{{s in NO, j in NO diff {{i}}}}(QQ[s,j,i]*epr[i])) + (sum{{s in NO,j in NO diff {{i}}}}QQ[s,i,j]*ept[i])) = EE[i];
+
+
+subject to restricao7hj{{i in NO}}:
+ W*(sum{{c in NB}}2^c*b[i,c])=BB[i];
+
+
+subject to restricao6{{i in NO, c in NB}}:
+y[i,c]<=Pmax*b[i,c];
+
+subject to restricao7{{i in NO, c in NB}}:
+y[i,c]<=PP;
+
+
+subject to restricao8{{i in NO, c in NB}}:
+PP-Pmax*(1-b[i,c])<=y[i,c];
+
+
+
+subject to restricao9:
+sum{{i in NO diff{{1}}, c in NB}} (b[i,c]*(2^c))=Cmax;
+
+subject to restricao10:
+sum{{c in NB}} b[1,c]=0;
+
+
+
+subject to restricao11{{i in NO diff{{1}}}}:
+sum{{c in NB}} b[i,c]>=1;
+
+
+
+
+data;
+
+set NO := {};
+set NB:= 0 1 2 3 4 5 6 7; 
+
+set ENLACES:
+{};
+
+param et[*,*]:
+{};
+
+param Q[*]:= {};
+param epr[*]:= {};
+param ept[*]:= {};
