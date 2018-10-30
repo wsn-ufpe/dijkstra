@@ -118,6 +118,14 @@ void WSNetwork::set_batteries(double* best_batteries, int len)
 }
 
 
+void WSNetwork::get_lifetimes(double* lifetimes, int len) const
+{
+    assert(len == _network_size);
+    for(int node_idx=0; node_idx<_network_size-1; node_idx++)
+        lifetimes[node_idx] = _nodes[node_idx].get_lifetime();
+}
+
+
 void WSNetwork::calculate_neighborhoods()
 {
     for(int n1_idx=_network_size-2; n1_idx>=0; n1_idx--)

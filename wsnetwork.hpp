@@ -32,6 +32,7 @@ public:
 	const int* get_best_routes_len() const { return _best_routes_len.get(); }
 	void get_batteries(double* best_batteries, int len);
 	void set_batteries(double* best_batteries, int len);
+	void get_lifetimes(double* lifetimes, int len) const;
 
 protected:
 	void update_traffic_along_route(int src_idx, const int* route,

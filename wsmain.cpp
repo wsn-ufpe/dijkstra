@@ -128,40 +128,48 @@ int main(int argc, char* argv[])
 	}
     }
 
-    //*************
-    const WSNode* nodes = network.get_nodes();
-    const char DASH[] = "     -      ";
-    std::cout << DASH;
-    for(int i=0; i<network.get_network_size() - 1; i++)
-	std::cout << " " << dummy.get_link_cost(nodes + network.get_network_size() - 1, nodes + i,
-						msg_rate_arg.getValue());
-    std::cout << std::endl;
-    for(int i=0; i<network.get_network_size() - 1; i++) {
-	std::cout << dummy.get_link_cost(nodes + i, nodes + network.get_network_size() - 1,
-					 msg_rate_arg.getValue());
-	for(int j=0; j<network.get_network_size() - 1; j++) {
-	    std::cout << " ";
-	    if(i == j)
-		std::cout << DASH;
-	    else
-		std::cout << dummy.get_link_cost(nodes + i, nodes + j, msg_rate_arg.getValue());
-	}
-	std::cout << std::endl;
-    }
-    //*************
-
     network.optimize_minimum_energy();
     output_data(&network, ("min_energy_" + output_file_arg.getValue() + ".dat").c_str());
 
     std::unique_ptr<double[]> best_batteries(new double[nbr_nodes]);
+    std::unique_ptr<double[]> consumptions(new double[nbr_nodes]);
+    batteries.reset(new double[nbr_nodes]);
 
     network.optimize_maximum_lifetime();
+
+    network.get_consumptions(consumptions.get(), nbr_nodes);
+    network.get_batteries(batteries.get(), nbr_nodes);
+    double total_batteries = 0;
+    double total_consumption = 0;
+    for(int node_idx=0; node_idx<nbr_nodes-1; node_idx++) {
+	total_consumption += consumptions[node_idx];
+	total_batteries += batteries[node_idx];
+    }
+    std::cerr << "Proportional batteries:";
+    for(int node_idx=0; node_idx<nbr_nodes-1; node_idx++)
+	std::cerr << " " << total_batteries*consumptions[node_idx]/total_consumption;
+    std::cerr << std::endl;
+    
     double best_lifetime = network.get_best_lifetime();
     network.get_batteries(best_batteries.get(), nbr_nodes);
     output_data(&network, ("max_lifetime_" + output_file_arg.getValue() + "_pre.dat").c_str());
     for(int i=0; i<nbr_redistrib_arg.getValue(); i++) {
 	network.redistribute_batteries(DEF_UNIT_BATTERY);
 	network.optimize_maximum_lifetime();
+
+	network.get_lifetimes(lifetimes.get(), nbr_nodes);
+	network.get_batteries(batteries.get(), nbr_nodes);
+	double total_batteries = 0;
+	double total_lifetimes = 0;
+	for(int node_idx=0; node_idx<nbr_nodes-1; node_idx++) {
+	    total_lifetimes += 1/lifetimes[node_idx];
+	    total_batteries += batteries[node_idx];
+	}
+	std::cerr << "Proportional batteries:";
+	for(int node_idx=0; node_idx<nbr_nodes-1; node_idx++)
+	    std::cerr << " " << total_batteries/lifetimes[node_idx]/total_lifetimes;
+	std::cerr << std::endl;
+
 	if (best_lifetime < network.get_best_lifetime()) {
 	    best_lifetime = network.get_best_lifetime();
 	    network.get_batteries(best_batteries.get(), nbr_nodes);
